@@ -1,0 +1,25 @@
+[project]
+name = "facegraph"
+version = "0.1.0"
+description = "Multi-group MediaPipe FaceMesh extractor with official meshes."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "qhiyn" }]
+dependencies = [
+  "opencv-python",
+  "mediapipe",
+  "numpy",
+]
+
+# (opsional) bikin command-line entry point biar bisa panggil `facegraph-extract`
+[project.scripts]
+facegraph-extract = "facegraph.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# (opsional) kalau mau lebih eksplisit soal auto-discovery paket:
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["facegraph", "scripts"]

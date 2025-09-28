@@ -7,6 +7,59 @@ from .features import compute_features_one_group
 from .overlay import draw_overlay_official
 from .io_utils import save_npz, save_features_csv, save_raw_csv, save_meta
 
+def _finalize_features_from_list(feats_list, feat_names, frame_mask):
+    """
+    Ubah feats_list (list np.array shape (k,), bisa 0 saat invalid) → array (T,F) yang aman.
+    - F: pakai len(feat_names) jika ada; kalau tidak, ambil dari entri pertama yang non-empty.
+    - Entri kosong → diisi NaN sepanjang F.
+    - Panjang != F → dipad/truncate + warning (ditampilkan sekali).
+    """
+    import numpy as _np
+    T = len(feats_list)
+
+    # Tentukan F
+    if feat_names is not None and len(feat_names) > 0:
+        F = len(feat_names)
+    else:
+        F = 0
+        for v in feats_list:
+            if isinstance(v, _np.ndarray) and v.size > 0:
+                F = int(v.shape[0])
+                break
+        feat_names = [] if F == 0 else [f"feat_{i}" for i in range(F)]
+
+    # Alokasikan output
+    if F == 0:
+        features = _np.zeros((T, 0), _np.float32)
+        return features, feat_names
+
+    features = _np.full((T, F), _np.nan, _np.float32)
+
+    warned_pad = False
+    warned_trunc = False
+
+    for t, arr in enumerate(feats_list):
+        if not isinstance(arr, _np.ndarray) or arr.size == 0:
+            # invalid / kosong → biarkan NaN
+            continue
+        if arr.shape[0] == F:
+            features[t] = arr.astype(_np.float32, copy=False)
+        elif arr.shape[0] < F:
+            if not warned_pad:
+                print("[WARN] features length shorter than expected; padding with NaN occurs (shown once).")
+                warned_pad = True
+            tmp = _np.full((F,), _np.nan, _np.float32)
+            tmp[:arr.shape[0]] = arr.astype(_np.float32, copy=False)
+            features[t] = tmp
+        else:  # arr.shape[0] > F
+            if not warned_trunc:
+                print("[WARN] features length longer than expected; truncating extras (shown once).")
+                warned_trunc = True
+            features[t] = arr[:F].astype(_np.float32, copy=False)
+
+    return features, feat_names
+
+
 class MultiGroupExtractor:
     def __init__(self, groups, preview=False, draw_idx=False, save_vis=None,
                  stride=1, refine=False, min_det=0.5, min_track=0.5):
@@ -123,19 +176,22 @@ class MultiGroupExtractor:
         frame_mask = np.array(frame_mask, bool)
         frame_indices = np.array(frame_indices, np.int64)
 
-        # pad features untuk frame invalid
-        if feat_names is None:
-            feature_names = []
-            features = np.zeros((nodes.shape[0], 0), np.float32)
-        else:
-            F = len(feat_names)
-            features = np.full((nodes.shape[0], F), np.nan, np.float32)
-            vi = 0
-            for t, v in enumerate(frame_mask):
-                if v:
-                    features[t] = feats_list[vi]
-                    vi += 1
-            feature_names = feat_names
+        # # pad features untuk frame invalid
+        # if feat_names is None:
+        #     feature_names = []
+        #     features = np.zeros((nodes.shape[0], 0), np.float32)
+        # else:
+        #     F = len(feat_names)
+        #     features = np.full((nodes.shape[0], F), np.nan, np.float32)
+        #     vi = 0
+        #     for t, v in enumerate(frame_mask):
+        #         if v:
+        #             features[t] = feats_list[vi]
+        #             vi += 1
+        #     feature_names = feat_names
+
+        # ===== finalize fitur aman (tanpa broadcast error) =====
+        features, feature_names = _finalize_features_from_list(feats_list, feat_names, frame_mask)
 
         fps_eff = float(max(1.0, (fps_in / self.stride)))
 
